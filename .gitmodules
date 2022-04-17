@@ -1,0 +1,12 @@
+[submodule "third_party/audiometa"]
+	path = third_party/audiometa
+	url = https://github.com/squeek502/audiometa.git
+[submodule "third_party/zig-sqlite"]
+	path = third_party/zig-sqlite
+	url = https://github.com/vrischmann/zig-sqlite
+[submodule "third_party/mibu"]
+	path = third_party/mibu
+	url = https://github.com/xyaman/mibu.git
+[submodule "third_party/known-folders"]
+	path = third_party/known-folders
+	url = git@github.com:vrischmann/known-folders.git
