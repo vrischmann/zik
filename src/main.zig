@@ -84,31 +84,6 @@ fn runConfigView(allocator: mem.Allocator, db: *sqlite.Db) !void {
             row.value,
         });
     }
-
-    // const value_opt = db.oneAlloc(
-    //     []const u8,
-    //     allocator,
-    //     query,
-    //     .{ .diags = &diags },
-    //     .{ .key = key },
-    // ) catch |err| {
-    //     print("unable to get config value, err: {s}\n", .{diags});
-    //     return err;
-    // };
-
-    // if (value_opt) |value| {
-    //     defer allocator.free(value);
-
-    //     print("{s} = \"{s}\"", .{
-    //         fmt.fmtSliceEscapeLower(key),
-    //         value,
-    //     });
-    // } else {
-    //     print("no value for config \"{s}\"", .{
-    //         fmt.fmtSliceEscapeLower(key),
-    //     });
-    //     return;
-    // }
 }
 
 fn runConfigGet(allocator: mem.Allocator, db: *sqlite.Db, key: []const u8) !void {
