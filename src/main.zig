@@ -187,13 +187,32 @@ fn runConfig(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8)
     }
 }
 
-fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8) !void {
+const ScanError = error{
+    Explained,
+} || mem.Allocator.Error || fs.File.OpenError;
+
+fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8) ScanError!void {
     _ = allocator;
     _ = db;
     _ = path;
 
-    var dir = try openLibraryPath(path);
+    var dir = try openLibraryPath(".");
     defer dir.close();
+
+    var arena = heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
+    var walker = try dir.walk(allocator);
+    defer walker.deinit();
+
+    while (try walker.next()) |entry| {
+        switch (entry.kind) {
+            .File, .SymLink => {
+                print("entry: {s}", .{entry.path});
+            },
+            else => continue,
+        }
+    }
 }
 
 fn runScan(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !void {
@@ -222,7 +241,10 @@ fn runScan(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !
 
         debug.assert(meta.activeTag(config) == .library);
 
-        try doScan(allocator, db, config.library);
+        doScan(allocator, db, config.library) catch |err| switch (err) {
+            error.Explained => return err,
+            else => return err,
+        };
     } else {
         print("no library configured", .{});
         return error.Explained;
@@ -230,13 +252,17 @@ fn runScan(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !
 }
 
 fn openLibraryPath(path: []const u8) !fs.Dir {
-    return fs.cwd().openDir(path, .{}) catch |err| switch (err) {
+    return fs.cwd().openDir(path, .{ .iterate = true }) catch |err| switch (err) {
         error.FileNotFound => {
             print("path \"{s}\" doesn't exist", .{path});
             return error.Explained;
         },
         error.NotDir => {
             print("path \"{s}\" is not a directory", .{path});
+            return error.Explained;
+        },
+        error.AccessDenied => {
+            print("path \"{s}\" is not accessible", .{path});
             return error.Explained;
         },
         else => fatal("unable to open library \"{s}\", err: {s}", .{ path, err }),
