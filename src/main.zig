@@ -142,17 +142,7 @@ fn runConfigSet(allocator: mem.Allocator, db: *sqlite.Db, key: []const u8, value
 
     const config = switch (tag) {
         .library => blk: {
-            var dir = fs.cwd().openDir(value, .{}) catch |err| switch (err) {
-                error.FileNotFound => {
-                    print("path \"{s}\" doesn't exist", .{value});
-                    return error.Explained;
-                },
-                error.NotDir => {
-                    print("path \"{s}\" is not a directory", .{value});
-                    return error.Explained;
-                },
-                else => fatal("unable to open library \"{s}\", err: {s}", .{ value, err }),
-            };
+            var dir = try openLibraryPath(value);
             defer dir.close();
 
             const absolute_path = try dir.realpathAlloc(allocator, ".");
@@ -201,6 +191,9 @@ fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8) !void {
     _ = allocator;
     _ = db;
     _ = path;
+
+    var dir = try openLibraryPath(path);
+    defer dir.close();
 }
 
 fn runScan(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !void {
@@ -234,6 +227,20 @@ fn runScan(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !
         print("no library configured", .{});
         return error.Explained;
     }
+}
+
+fn openLibraryPath(path: []const u8) !fs.Dir {
+    return fs.cwd().openDir(path, .{}) catch |err| switch (err) {
+        error.FileNotFound => {
+            print("path \"{s}\" doesn't exist", .{path});
+            return error.Explained;
+        },
+        error.NotDir => {
+            print("path \"{s}\" is not a directory", .{path});
+            return error.Explained;
+        },
+        else => fatal("unable to open library \"{s}\", err: {s}", .{ path, err }),
+    };
 }
 
 const Config = union(enum) {
