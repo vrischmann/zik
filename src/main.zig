@@ -181,40 +181,88 @@ fn cmdConfig(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8)
 }
 
 const MyMetadata = struct {
-    artist: []const u8,
-    album: []const u8,
-    album_artist: []const u8,
-    release_date: []const u8,
+    artist: ?[]const u8 = null,
+    album: ?[]const u8 = null,
+    album_artist: ?[]const u8 = null,
+    release_date: ?[]const u8 = null,
+    track_name: ?[]const u8 = null,
+    track_number: usize = 0,
+
+    pub const FromAudioMetaError = error{} || mem.Allocator.Error || fmt.ParseIntError;
+
+    fn dupeOrNull(allocator: mem.Allocator, data_opt: ?[]const u8) mem.Allocator.Error!?[]const u8 {
+        if (data_opt) |data| {
+            return try allocator.dupe(u8, data);
+        }
+        return null;
+    }
+
+    fn fromAudiometa(allocator: mem.Allocator, md: audiometa.metadata.TypedMetadata) FromAudioMetaError!?MyMetadata {
+        switch (md) {
+            .flac => |*flac_meta| {
+                return MyMetadata{
+                    .artist = try dupeOrNull(allocator, flac_meta.map.getFirst("ARTIST")),
+                    .album = try dupeOrNull(allocator, flac_meta.map.getFirst("ALBUM")),
+                    .album_artist = try dupeOrNull(allocator, flac_meta.map.getFirst("ALBUMARTIST")),
+                    .release_date = try dupeOrNull(allocator, flac_meta.map.getFirst("DATE")),
+                    .track_name = try dupeOrNull(allocator, flac_meta.map.getFirst("TITLE")),
+                    .track_number = if (flac_meta.map.getFirst("TRACKNUMBER")) |date|
+                        try fmt.parseInt(usize, date, 10)
+                    else
+                        0,
+                };
+            },
+            .mp4 => |mp4_meta| {
+                return MyMetadata{
+                    .artist = try dupeOrNull(allocator, mp4_meta.map.getFirst("\xA9ART")),
+                    .album = try dupeOrNull(allocator, mp4_meta.map.getFirst("\xA9alb")),
+                    .album_artist = try dupeOrNull(allocator, mp4_meta.map.getFirst("aART")),
+                    .release_date = try dupeOrNull(allocator, mp4_meta.map.getFirst("\xA9day")),
+                    .track_name = try dupeOrNull(allocator, mp4_meta.map.getFirst("\xA9nam")),
+                };
+            },
+            else => return null,
+        }
+    }
 };
 
 const ExtractMetadataError = error{
     Explained,
-} || time.Timer.Error || mem.Allocator.Error || fs.File.OpenError || os.SeekError;
+} || time.Timer.Error || mem.Allocator.Error || fs.File.OpenError || os.SeekError || MyMetadata.FromAudioMetaError;
 
 fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walker.WalkerEntry) ExtractMetadataError!void {
     _ = allocator;
     _ = db;
 
-    print("entry: {s}", .{entry.path});
+    var metadata = blk: {
+        var file = try entry.dir.openFile(entry.basename, .{});
+        defer file.close();
 
-    var file = try entry.dir.openFile(entry.basename, .{});
-    defer file.close();
+        var stream_source = io.StreamSource{ .file = file };
 
-    var stream_source = io.StreamSource{ .file = file };
+        var metadata = try audiometa.metadata.readAll(allocator, &stream_source);
+        defer metadata.deinit();
 
-    var metadata = try audiometa.metadata.readAll(allocator, &stream_source);
-    defer metadata.deinit();
-
-    for (metadata.tags) |tag| {
-        switch (tag) {
-            .flac => |flac_meta| {
-                flac_meta.map.dump();
-            },
-            .mp4 => |mp4_meta| {
-                mp4_meta.map.dump();
-            },
-            else => {},
+        var result = try std.ArrayList(MyMetadata).initCapacity(allocator, metadata.tags.len);
+        for (metadata.tags) |tag| {
+            if (try MyMetadata.fromAudiometa(allocator, tag)) |md| {
+                try result.append(md);
+            }
         }
+
+        break :blk result;
+    };
+
+    _ = metadata;
+
+    for (metadata.items) |md| {
+        print("artist=\"{s}\", album=\"{s}\", album artist=\"{s}\", release date=\"{s}\", track number={d}", .{
+            md.artist,
+            md.album,
+            md.album_artist,
+            md.release_date,
+            md.track_number,
+        });
     }
 
     // TODO(vincent): use the collator when ready
@@ -229,10 +277,6 @@ const ScanError = error{
 } || mem.Allocator.Error || fs.File.OpenError || ExtractMetadataError;
 
 fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8) ScanError!void {
-    _ = allocator;
-    _ = db;
-    _ = path;
-
     var dir = try openLibraryPath(path);
     defer dir.close();
 
