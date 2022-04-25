@@ -7,7 +7,9 @@ const io = std.io;
 const mem = std.mem;
 const meta = std.meta;
 const os = std.os;
+const time = std.time;
 
+const audiometa = @import("audiometa");
 const known_folders = @import("known-folders");
 const mibu = @import("mibu");
 const sqlite = @import("sqlite");
@@ -187,16 +189,60 @@ fn runConfig(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8)
     }
 }
 
+const MyMetadata = struct {
+    artist: []const u8,
+    album: []const u8,
+    album_artist: []const u8,
+    release_date: []const u8,
+};
+
+const ExtractMetadataError = error{
+    Explained,
+} || time.Timer.Error || mem.Allocator.Error || fs.File.OpenError || os.SeekError;
+
+fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walker.WalkerEntry) ExtractMetadataError!void {
+    _ = allocator;
+    _ = db;
+
+    print("entry: {s}", .{entry.path});
+
+    var file = try entry.dir.openFile(entry.basename, .{});
+    defer file.close();
+
+    var stream_source = io.StreamSource{ .file = file };
+
+    var metadata = try audiometa.metadata.readAll(allocator, &stream_source);
+    defer metadata.deinit();
+
+    for (metadata.tags) |tag| {
+        switch (tag) {
+            .flac => |flac_meta| {
+                flac_meta.map.dump();
+            },
+            .mp4 => |mp4_meta| {
+                mp4_meta.map.dump();
+            },
+            else => {},
+        }
+    }
+
+    // TODO(vincent): use the collator when ready
+    // var collator = audiometa.collate.Collator.init(allocator, &metadata);
+    // defer collator.deinit();
+    // const artists = try collator.artists();
+    // print("artists: {s}", .{artists});
+}
+
 const ScanError = error{
     Explained,
-} || mem.Allocator.Error || fs.File.OpenError;
+} || mem.Allocator.Error || fs.File.OpenError || ExtractMetadataError;
 
 fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8) ScanError!void {
     _ = allocator;
     _ = db;
     _ = path;
 
-    var dir = try openLibraryPath(".");
+    var dir = try openLibraryPath(path);
     defer dir.close();
 
     var arena = heap.ArenaAllocator.init(allocator);
@@ -208,7 +254,10 @@ fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8) ScanError!
     while (try walker.next()) |entry| {
         switch (entry.kind) {
             .File, .SymLink => {
-                print("entry: {s}", .{entry.path});
+                var per_file_arena = heap.ArenaAllocator.init(allocator);
+                defer per_file_arena.deinit();
+
+                try extractMetadata(per_file_arena.allocator(), db, entry);
             },
             else => continue,
         }
