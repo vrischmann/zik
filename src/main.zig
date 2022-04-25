@@ -183,9 +183,6 @@ fn runConfigSet(allocator: mem.Allocator, db: *sqlite.Db, key: []const u8, value
 }
 
 fn runConfig(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !void {
-    _ = allocator;
-    _ = db;
-
     if (args.len <= 0) {
         return runConfigView(allocator, db);
     } else if (args.len == 1) {
