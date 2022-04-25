@@ -256,8 +256,6 @@ fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8) ScanError!
 }
 
 fn cmdScan(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !void {
-    _ = allocator;
-
     // Parse the arguments and options
 
     {
