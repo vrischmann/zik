@@ -197,15 +197,16 @@ fn runConfig(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8)
     }
 }
 
-fn runScan(allocator: mem.Allocator, args: []const []const u8) !void {
+fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8) !void {
+    _ = allocator;
+    _ = db;
+    _ = path;
+}
+
+fn runScan(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !void {
     _ = allocator;
 
     // Parse the arguments and options
-
-    var scan_mode: union(enum) {
-        directory: []const u8,
-        library,
-    } = .library;
 
     {
         var i: usize = 0;
@@ -214,21 +215,24 @@ fn runScan(allocator: mem.Allocator, args: []const []const u8) !void {
             if (mem.eql(u8, "-h", arg) or mem.eql(u8, "--help", arg)) {
                 print(scan_usage, .{});
                 return error.Explained;
-            } else if (mem.eql(u8, "-d", arg) or mem.eql(u8, "--directory", arg)) {
-                if (i + 1 >= args.len) fatal("expected argument after \"{s}\"", .{arg});
-                i += 1;
-                scan_mode = .{ .directory = args[i] };
             }
+
+            // } else if (mem.eql(u8, "-d", arg) or mem.eql(u8, "--directory", arg)) {
+            //     if (i + 1 >= args.len) fatal("expected argument after \"{s}\"", .{arg});
+            //     i += 1;
         }
     }
 
-    switch (scan_mode) {
-        .directory => |directory| {
-            print("scan a specific directory: {s}\n", .{directory});
-        },
-        .library => {
-            print("scanning the library\n", .{});
-        },
+    const config_opt = try getConfig(.library, allocator, db);
+    if (config_opt) |config| {
+        defer config.deinit(allocator);
+
+        debug.assert(meta.activeTag(config) == .library);
+
+        try doScan(allocator, db, config.library);
+    } else {
+        print("no library configured", .{});
+        return error.Explained;
     }
 }
 
@@ -246,31 +250,34 @@ const Config = union(enum) {
     }
 };
 
-// fn getConfig(comptime Tag: meta.Tag(Config), comptime Payload: type, allocator: mem.Allocator, db: *sqlite.Db) !?Config {
-//     var diags = sqlite.Diagnostics{};
+fn getConfig(comptime Tag: meta.Tag(Config), allocator: mem.Allocator, db: *sqlite.Db) !?Config {
+    const Payload = meta.TagPayload(Config, Tag);
+    const key = meta.tagName(Tag);
 
-//     const query =
-//         \\SELECT value FROM config WHERE key = $key
-//     ;
+    var diags = sqlite.Diagnostics{};
 
-//     const value = db.oneAlloc(
-//         Payload,
-//         allocator,
-//         query,
-//         .{ .diags = &diags },
-//         .{ .key = @tagName(Tag) },
-//     ) catch |err| {
-//         print("unable to get config value, err: {s}\n", .{diags});
-//         return err;
-//     };
-//     if (value == null) {
-//         return null;
-//     }
+    const query =
+        \\SELECT value FROM config WHERE key = $key
+    ;
 
-//     return @unionInit(Config, @tagName(Tag), value.?);
-// }
+    const value = try db.oneAlloc(
+        Payload,
+        allocator,
+        query,
+        .{ .diags = &diags },
+        .{ .key = key },
+    );
+    if (value == null) {
+        print("unable to get config `{s}`, err: {s}\n", .{ key, diags });
+        return null;
+    }
+
+    return @unionInit(Config, @tagName(Tag), value.?);
+}
 
 fn setConfig(allocator: mem.Allocator, db: *sqlite.Db, config: Config) !void {
+    const key = meta.tagName(meta.activeTag(config));
+
     const query =
         \\INSERT INTO config(key, value) VALUES($key{[]const u8}, $value)
         \\ON CONFLICT(key) DO UPDATE SET value = excluded.value
@@ -282,11 +289,11 @@ fn setConfig(allocator: mem.Allocator, db: *sqlite.Db, config: Config) !void {
         query,
         .{ .diags = &diags },
         .{
-            .key = meta.tagName(meta.activeTag(config)),
+            .key = key,
             .value = config,
         },
     ) catch |err| {
-        print("unable to get config value, err: {s}\n", .{diags});
+        print("unable to set config `{s}`, err: {s}\n", .{ key, diags });
         return err;
     };
 }
@@ -426,7 +433,7 @@ pub fn main() anyerror!u8 {
     const res = if (mem.eql(u8, "config", command))
         runConfig(allocator, &db, args)
     else if (mem.eql(u8, "scan", command))
-        runScan(allocator, args);
+        runScan(allocator, &db, args);
 
     res catch |err| switch (err) {
         error.Explained => return 1,
