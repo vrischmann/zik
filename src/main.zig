@@ -59,133 +59,124 @@ const config_usage =
     \\
 ;
 
-fn cmdConfigView(allocator: mem.Allocator, db: *sqlite.Db) !void {
-    const query =
-        \\SELECT key, value FROM config
-    ;
-
-    var diags = sqlite.Diagnostics{};
-
-    var stmt = try db.prepareWithDiags(query, .{ .diags = &diags });
-    defer stmt.deinit();
-
-    var iter = try stmt.iterator(
-        struct {
-            key: []const u8,
-            value: []const u8,
-        },
-        .{},
-    );
-
-    var arena = heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-
-    while (try iter.nextAlloc(arena.allocator(), .{})) |row| {
-        print("{s} = \"{s}\"", .{
-            fmt.fmtSliceEscapeLower(row.key),
-            row.value,
-        });
-    }
-}
-
-fn cmdConfigGet(allocator: mem.Allocator, db: *sqlite.Db, key: []const u8) !void {
-    const tag_opt = meta.stringToEnum(meta.Tag(Config), key);
-    if (tag_opt == null) {
-        print("no config named \"{s}\"", .{
-            fmt.fmtSliceEscapeLower(key),
-        });
-        return error.Explained;
-    }
-
-    //
-
-    const query =
-        \\SELECT value FROM config WHERE key = $key
-    ;
-
-    var diags = sqlite.Diagnostics{};
-
-    const value_opt = db.oneAlloc(
-        []const u8,
-        allocator,
-        query,
-        .{ .diags = &diags },
-        .{ .key = key },
-    ) catch |err| {
-        print("unable to get config value, err: {s}\n", .{diags});
-        return err;
-    };
-
-    if (value_opt) |value| {
-        defer allocator.free(value);
-
-        print("{s} = \"{s}\"", .{
-            fmt.fmtSliceEscapeLower(key),
-            value,
-        });
-    } else {
-        print("no value for config \"{s}\"", .{
-            fmt.fmtSliceEscapeLower(key),
-        });
-        return;
-    }
-}
-
-fn cmdConfigSet(allocator: mem.Allocator, db: *sqlite.Db, key: []const u8, value: []const u8) !void {
-    const tag_opt = meta.stringToEnum(meta.Tag(Config), key);
-    if (tag_opt == null) {
-        print("no config named \"{s}\"", .{
-            fmt.fmtSliceEscapeLower(key),
-        });
-        return error.Explained;
-    }
-
-    const tag: meta.Tag(Config) = tag_opt.?;
-
-    const config = switch (tag) {
-        .library => blk: {
-            var dir = try openLibraryPath(value);
-            defer dir.close();
-
-            const absolute_path = try dir.realpathAlloc(allocator, ".");
-
-            print("setting library to {s} (absolute path resolved from {s})", .{
-                absolute_path,
-                value,
-            });
-
-            break :blk Config{ .library = absolute_path };
-        },
-        .scan_parallelism => blk: {
-            const n = fmt.parseInt(usize, value, 10) catch {
-                print("invalid `scan_parallelism` value \"{s}\"", .{
-                    fmt.fmtSliceEscapeLower(value),
-                });
-                return error.Explained;
-            };
-
-            print("setting scan parallelism to {d}", .{n});
-
-            break :blk Config{ .scan_parallelism = n };
-        },
-    };
-    defer config.deinit(allocator);
-
-    try setConfig(allocator, db, config);
-}
-
 fn cmdConfig(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !void {
     if (args.len <= 0) {
-        return cmdConfigView(allocator, db);
+        // Read all configuration values
+
+        const query =
+            \\SELECT key, value FROM config
+        ;
+
+        var diags = sqlite.Diagnostics{};
+
+        var stmt = try db.prepareWithDiags(query, .{ .diags = &diags });
+        defer stmt.deinit();
+
+        var iter = try stmt.iterator(
+            struct {
+                key: []const u8,
+                value: []const u8,
+            },
+            .{},
+        );
+
+        var arena = heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+
+        while (try iter.nextAlloc(arena.allocator(), .{})) |row| {
+            print("{s} = \"{s}\"", .{
+                fmt.fmtSliceEscapeLower(row.key),
+                row.value,
+            });
+        }
     } else if (args.len == 1) {
+        // Read the configuration value for the key provided in the first argument
+
         const key = args[0];
 
-        return cmdConfigGet(allocator, db, key);
+        const tag_opt = meta.stringToEnum(meta.Tag(Config), key);
+        if (tag_opt == null) {
+            print("no config named \"{s}\"", .{
+                fmt.fmtSliceEscapeLower(key),
+            });
+            return error.Explained;
+        }
+
+        const query =
+            \\SELECT value FROM config WHERE key = $key
+        ;
+
+        var diags = sqlite.Diagnostics{};
+        const value_opt = db.oneAlloc(
+            []const u8,
+            allocator,
+            query,
+            .{ .diags = &diags },
+            .{ .key = key },
+        ) catch |err| {
+            print("unable to get config value, err: {s}\n", .{diags});
+            return err;
+        };
+
+        if (value_opt) |value| {
+            defer allocator.free(value);
+
+            print("{s} = \"{s}\"", .{
+                fmt.fmtSliceEscapeLower(key),
+                value,
+            });
+        } else {
+            print("no value for config \"{s}\"", .{
+                fmt.fmtSliceEscapeLower(key),
+            });
+            return;
+        }
     } else {
+        // Set the configuration value (the second argument) for the key provided in the first argument
+
         const key = args[0];
         const value = args[1];
 
-        return cmdConfigSet(allocator, db, key, value);
+        const tag_opt = meta.stringToEnum(meta.Tag(Config), key);
+        if (tag_opt == null) {
+            print("no config named \"{s}\"", .{
+                fmt.fmtSliceEscapeLower(key),
+            });
+            return error.Explained;
+        }
+
+        const tag: meta.Tag(Config) = tag_opt.?;
+
+        const config = switch (tag) {
+            .library => blk: {
+                var dir = try openLibraryPath(value);
+                defer dir.close();
+
+                const absolute_path = try dir.realpathAlloc(allocator, ".");
+
+                print("setting library to {s} (absolute path resolved from {s})", .{
+                    absolute_path,
+                    value,
+                });
+
+                break :blk Config{ .library = absolute_path };
+            },
+            .scan_parallelism => blk: {
+                const n = fmt.parseInt(usize, value, 10) catch {
+                    print("invalid `scan_parallelism` value \"{s}\"", .{
+                        fmt.fmtSliceEscapeLower(value),
+                    });
+                    return error.Explained;
+                };
+
+                print("setting scan parallelism to {d}", .{n});
+
+                break :blk Config{ .scan_parallelism = n };
+            },
+        };
+        defer config.deinit(allocator);
+
+        try setConfig(allocator, db, config);
     }
 }
 
