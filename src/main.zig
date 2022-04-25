@@ -59,7 +59,7 @@ const config_usage =
     \\
 ;
 
-fn runConfigView(allocator: mem.Allocator, db: *sqlite.Db) !void {
+fn cmdConfigView(allocator: mem.Allocator, db: *sqlite.Db) !void {
     const query =
         \\SELECT key, value FROM config
     ;
@@ -88,7 +88,7 @@ fn runConfigView(allocator: mem.Allocator, db: *sqlite.Db) !void {
     }
 }
 
-fn runConfigGet(allocator: mem.Allocator, db: *sqlite.Db, key: []const u8) !void {
+fn cmdConfigGet(allocator: mem.Allocator, db: *sqlite.Db, key: []const u8) !void {
     const tag_opt = meta.stringToEnum(meta.Tag(Config), key);
     if (tag_opt == null) {
         print("no config named \"{s}\"", .{
@@ -131,7 +131,7 @@ fn runConfigGet(allocator: mem.Allocator, db: *sqlite.Db, key: []const u8) !void
     }
 }
 
-fn runConfigSet(allocator: mem.Allocator, db: *sqlite.Db, key: []const u8, value: []const u8) !void {
+fn cmdConfigSet(allocator: mem.Allocator, db: *sqlite.Db, key: []const u8, value: []const u8) !void {
     const tag_opt = meta.stringToEnum(meta.Tag(Config), key);
     if (tag_opt == null) {
         print("no config named \"{s}\"", .{
@@ -174,18 +174,18 @@ fn runConfigSet(allocator: mem.Allocator, db: *sqlite.Db, key: []const u8, value
     try setConfig(allocator, db, config);
 }
 
-fn runConfig(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !void {
+fn cmdConfig(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !void {
     if (args.len <= 0) {
-        return runConfigView(allocator, db);
+        return cmdConfigView(allocator, db);
     } else if (args.len == 1) {
         const key = args[0];
 
-        return runConfigGet(allocator, db, key);
+        return cmdConfigGet(allocator, db, key);
     } else {
         const key = args[0];
         const value = args[1];
 
-        return runConfigSet(allocator, db, key, value);
+        return cmdConfigSet(allocator, db, key, value);
     }
 }
 
@@ -264,7 +264,7 @@ fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8) ScanError!
     }
 }
 
-fn runScan(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !void {
+fn cmdScan(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !void {
     _ = allocator;
 
     // Parse the arguments and options
@@ -513,9 +513,9 @@ pub fn main() anyerror!u8 {
     args = args[1..];
 
     const res = if (mem.eql(u8, "config", command))
-        runConfig(allocator, &db, args)
+        cmdConfig(allocator, &db, args)
     else if (mem.eql(u8, "scan", command))
-        runScan(allocator, &db, args);
+        cmdScan(allocator, &db, args);
 
     res catch |err| switch (err) {
         error.Explained => return 1,
