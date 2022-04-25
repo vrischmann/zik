@@ -20,7 +20,7 @@ pub fn build(b: *std.build.Builder) !void {
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.addIncludeDir("third_party/zig-sqlite/c");
-    exe.addPackagePath("audiometa", "third_party/audiometa/src/main.zig");
+    exe.addPackagePath("audiometa", "third_party/audiometa/src/audiometa.zig");
     exe.addPackagePath("sqlite", "third_party/zig-sqlite/sqlite.zig");
     exe.addPackagePath("mibu", "third_party/mibu/src/main.zig");
     exe.addPackagePath("known-folders", "third_party/known-folders/known-folders.zig");
