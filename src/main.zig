@@ -253,7 +253,9 @@ fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walke
         break :blk result;
     };
 
-    _ = metadata;
+    if (metadata.items.len <= 0) {
+        return;
+    }
 
     for (metadata.items) |md| {
         print("artist=\"{s}\", album=\"{s}\", album artist=\"{s}\", release date=\"{s}\", track number={d}", .{
