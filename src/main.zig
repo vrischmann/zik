@@ -470,7 +470,7 @@ fn getConfig(comptime Tag: meta.Tag(Config), allocator: mem.Allocator, db: *sqli
     var diags = sqlite.Diagnostics{};
 
     const query =
-        \\SELECT value FROM config WHERE key = $key
+        \\SELECT value FROM config WHERE key = $key{[]const u8}
     ;
 
     const value = try db.oneAlloc(
