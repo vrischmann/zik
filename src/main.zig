@@ -268,9 +268,6 @@ fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walke
 
     //
 
-    var savepoint = try db.savepoint("save_file_metadata");
-    defer savepoint.rollback();
-
     // Find the artist
     const artist = md.artist orelse "Unknown";
     const artist_id = try saveArtist(db, artist);
@@ -294,8 +291,6 @@ fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walke
         track_id,
         md.track_number,
     });
-
-    savepoint.commit();
 
     // TODO(vincent): use the collator when ready
     // var collator = audiometa.collate.Collator.init(allocator, &metadata);
@@ -322,6 +317,9 @@ fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8, options: S
     var walker = try dir.walk(allocator);
     defer walker.deinit();
 
+    var savepoint = try db.savepoint("save_file_metadata");
+    defer savepoint.rollback();
+
     while (try walker.next()) |entry| {
         switch (entry.kind) {
             .File, .SymLink => {
@@ -337,6 +335,8 @@ fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8, options: S
             else => continue,
         }
     }
+
+    savepoint.commit();
 }
 
 fn cmdScan(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !void {
