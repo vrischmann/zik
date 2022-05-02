@@ -296,7 +296,7 @@ const ExtractMetadataError = error{
     Explained,
 } || time.Timer.Error || mem.Allocator.Error || MMapableFile.OpenError || os.SeekError ||
     sqlite.Savepoint.InitError ||
-    SaveArtistError || SaveAlbumError || SaveTrackError ||
+    SaveDataError ||
     MyMetadata.FromAudioMetaError;
 
 fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walker.WalkerEntry, options: ExtractMetadataOptions) ExtractMetadataError!void {
@@ -508,12 +508,12 @@ fn setConfig(allocator: mem.Allocator, db: *sqlite.Db, config: Config) !void {
     };
 }
 
-const SaveArtistError = error{
+const SaveDataError = error{
     Workaround,
     Explained,
 } || sqlite.Error;
 
-fn saveArtist(db: *sqlite.Db, name: []const u8) SaveTrackError!usize {
+fn saveArtist(db: *sqlite.Db, name: []const u8) SaveDataError!usize {
     var diags = sqlite.Diagnostics{};
 
     const id_opt = db.one(
@@ -539,12 +539,7 @@ fn saveArtist(db: *sqlite.Db, name: []const u8) SaveTrackError!usize {
     return @intCast(usize, db.getLastInsertRowID());
 }
 
-const SaveAlbumError = error{
-    Workaround,
-    Explained,
-} || sqlite.Error;
-
-fn saveAlbum(db: *sqlite.Db, artist_id: usize, name: []const u8) SaveAlbumError!AlbumID {
+fn saveAlbum(db: *sqlite.Db, artist_id: usize, name: []const u8) SaveDataError!AlbumID {
     var diags = sqlite.Diagnostics{};
 
     const id_opt = db.one(
@@ -576,11 +571,7 @@ fn saveAlbum(db: *sqlite.Db, artist_id: usize, name: []const u8) SaveAlbumError!
     return @intCast(usize, db.getLastInsertRowID());
 }
 
-const SaveTrackError = error{
-    Explained,
-} || sqlite.Error;
-
-fn saveTrack(db: *sqlite.Db, artist_id: ArtistID, album_id: AlbumID, metadata: MyMetadata) SaveTrackError!TrackID {
+fn saveTrack(db: *sqlite.Db, artist_id: ArtistID, album_id: AlbumID, metadata: MyMetadata) SaveDataError!TrackID {
     var diags = sqlite.Diagnostics{};
 
     db.exec(
