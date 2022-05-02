@@ -180,6 +180,10 @@ fn cmdConfig(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8)
     }
 }
 
+const ArtistID = usize;
+const AlbumID = usize;
+const TrackID = usize;
+
 const MyMetadata = struct {
     artist: ?[]const u8 = null,
     album: ?[]const u8 = null,
@@ -343,13 +347,19 @@ fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walke
     const album = md.album orelse "Unknown";
     const album_id = try getAlbumID(db, artist_id, album);
 
-    print("artist=\"{s}\" (id={d}), album=\"{s}\" (id={d}), album artist=\"{s}\", release date=\"{s}\", track number={d}", .{
+    // Save the track
+
+    const track_id = try saveTrack(db, artist_id, album_id, md);
+
+    print("artist=\"{s}\" (id={d}), album=\"{s}\" (id={d}), album artist=\"{s}\", release date=\"{s}\", track=\"{s}\" (id={d}), track number={d}", .{
         artist,
         artist_id,
         album,
         album_id,
         md.album_artist,
         md.release_date,
+        md.track_name,
+        track_id,
         md.track_number,
     });
 
@@ -547,7 +557,7 @@ const GetAlbumIDError = error{
     Explained,
 } || sqlite.Error;
 
-fn getAlbumID(db: *sqlite.Db, artist_id: usize, name: []const u8) GetAlbumIDError!usize {
+fn getAlbumID(db: *sqlite.Db, artist_id: usize, name: []const u8) GetAlbumIDError!AlbumID {
     var diags = sqlite.Diagnostics{};
 
     const id_opt = db.one(
@@ -573,6 +583,45 @@ fn getAlbumID(db: *sqlite.Db, artist_id: usize, name: []const u8) GetAlbumIDErro
         },
     ) catch {
         print("unable to insert album \"{s}\" and artist ID {d}, err: {s}", .{ name, artist_id, diags });
+        return error.Explained;
+    };
+
+    return @intCast(usize, db.getLastInsertRowID());
+}
+
+const SaveTrackError = error{
+    Explained,
+} || sqlite.Error;
+
+fn saveTrack(db: *sqlite.Db, artist_id: ArtistID, album_id: AlbumID, metadata: MyMetadata) SaveTrackError!TrackID {
+    var diags = sqlite.Diagnostics{};
+
+    db.exec(
+        \\INSERT INTO track(name, artist_id, album_id, release_date, number)
+        \\VALUES(
+        \\  $name{?[]const u8},
+        \\  $artist_id{usize},
+        \\  $album_id{usize},
+        \\  $release_date{?[]const u8},
+        \\  $number{usize}
+        \\)
+    ,
+        .{ .diags = &diags },
+        .{
+            .name = metadata.track_name,
+            .artist_id = artist_id,
+            .album_id = album_id,
+            .release_date = metadata.release_date,
+            .number = metadata.track_number,
+        },
+    ) catch {
+        print("unable to insert track \"{s}\" (artist_id={d}, album_id={d}, track number={d}), err: {s}", .{
+            metadata.track_name,
+            artist_id,
+            album_id,
+            metadata.track_number,
+            diags,
+        });
         return error.Explained;
     };
 
@@ -628,7 +677,7 @@ fn initDatabase(db: *sqlite.Db) !void {
         ,
         \\CREATE TABLE IF NOT EXISTS album(
         \\  id INTEGER PRIMARY KEY,
-        \\  name INTEGER,
+        \\  name TEXT,
         \\  artist_id INTEGER,
         \\  album_artist_id INTEGER,
         \\  release_date TEXT,
@@ -640,10 +689,11 @@ fn initDatabase(db: *sqlite.Db) !void {
         ,
         \\CREATE TABLE IF NOT EXISTS track(
         \\  id INTEGER PRIMARY KEY,
-        \\  name INTEGER,
+        \\  name TEXT UNIQUE,
         \\  artist_id INTEGER,
-        \\  release_date TEXT,
         \\  album_id INTEGER,
+        \\  release_date TEXT,
+        \\  number INTEGER,
         \\
         \\  FOREIGN KEY(artist_id) REFERENCES artist(id),
         \\  FOREIGN KEY(album_id) REFERENCES album(id)
