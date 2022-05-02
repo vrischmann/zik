@@ -63,13 +63,11 @@ fn cmdConfig(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8)
     if (args.len <= 0) {
         // Read all configuration values
 
-        const query =
-            \\SELECT key, value FROM config
-        ;
-
         var diags = sqlite.Diagnostics{};
-
-        var stmt = try db.prepareWithDiags(query, .{ .diags = &diags });
+        var stmt = try db.prepareWithDiags(
+            "SELECT key, value FROM config",
+            .{ .diags = &diags },
+        );
         defer stmt.deinit();
 
         var iter = try stmt.iterator(
@@ -102,15 +100,11 @@ fn cmdConfig(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8)
             return error.Explained;
         }
 
-        const query =
-            \\SELECT value FROM config WHERE key = $key
-        ;
-
         var diags = sqlite.Diagnostics{};
         const value_opt = db.oneAlloc(
             []const u8,
             allocator,
-            query,
+            "SELECT value FROM config WHERE key = $key",
             .{ .diags = &diags },
             .{ .key = key },
         ) catch |err| {
@@ -479,14 +473,10 @@ fn getConfig(comptime Tag: meta.Tag(Config), allocator: mem.Allocator, db: *sqli
 
     var diags = sqlite.Diagnostics{};
 
-    const query =
-        \\SELECT value FROM config WHERE key = $key{[]const u8}
-    ;
-
     const value = try db.oneAlloc(
         Payload,
         allocator,
-        query,
+        "SELECT value FROM config WHERE key = $key{[]const u8}",
         .{ .diags = &diags },
         .{ .key = key },
     );
@@ -501,15 +491,12 @@ fn getConfig(comptime Tag: meta.Tag(Config), allocator: mem.Allocator, db: *sqli
 fn setConfig(allocator: mem.Allocator, db: *sqlite.Db, config: Config) !void {
     const key = meta.tagName(meta.activeTag(config));
 
-    const query =
-        \\INSERT INTO config(key, value) VALUES($key{[]const u8}, $value)
-        \\ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    ;
-
     var diags = sqlite.Diagnostics{};
     db.execAlloc(
         allocator,
-        query,
+        \\INSERT INTO config(key, value) VALUES($key{[]const u8}, $value)
+        \\ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    ,
         .{ .diags = &diags },
         .{
             .key = key,
