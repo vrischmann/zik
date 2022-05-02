@@ -302,7 +302,7 @@ const ExtractMetadataError = error{
     Explained,
 } || time.Timer.Error || mem.Allocator.Error || MMapableFile.OpenError || os.SeekError ||
     sqlite.Savepoint.InitError ||
-    GetArtistIDError ||
+    SaveArtistError || SaveAlbumError || SaveTrackError ||
     MyMetadata.FromAudioMetaError;
 
 fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walker.WalkerEntry, options: ExtractMetadataOptions) ExtractMetadataError!void {
@@ -341,11 +341,11 @@ fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walke
 
     // Find the artist
     const artist = md.artist orelse "Unknown";
-    const artist_id = try getArtistID(db, artist);
+    const artist_id = try saveArtist(db, artist);
 
     // Find the album
     const album = md.album orelse "Unknown";
-    const album_id = try getAlbumID(db, artist_id, album);
+    const album_id = try saveAlbum(db, artist_id, album);
 
     // Save the track
 
@@ -521,12 +521,12 @@ fn setConfig(allocator: mem.Allocator, db: *sqlite.Db, config: Config) !void {
     };
 }
 
-const GetArtistIDError = error{
+const SaveArtistError = error{
     Workaround,
     Explained,
 } || sqlite.Error;
 
-fn getArtistID(db: *sqlite.Db, name: []const u8) GetArtistIDError!usize {
+fn saveArtist(db: *sqlite.Db, name: []const u8) SaveTrackError!usize {
     var diags = sqlite.Diagnostics{};
 
     const id_opt = db.one(
@@ -552,12 +552,12 @@ fn getArtistID(db: *sqlite.Db, name: []const u8) GetArtistIDError!usize {
     return @intCast(usize, db.getLastInsertRowID());
 }
 
-const GetAlbumIDError = error{
+const SaveAlbumError = error{
     Workaround,
     Explained,
 } || sqlite.Error;
 
-fn getAlbumID(db: *sqlite.Db, artist_id: usize, name: []const u8) GetAlbumIDError!AlbumID {
+fn saveAlbum(db: *sqlite.Db, artist_id: usize, name: []const u8) SaveAlbumError!AlbumID {
     var diags = sqlite.Diagnostics{};
 
     const id_opt = db.one(
@@ -605,6 +605,13 @@ fn saveTrack(db: *sqlite.Db, artist_id: ArtistID, album_id: AlbumID, metadata: M
         \\  $release_date{?[]const u8},
         \\  $number{usize}
         \\)
+        \\ON CONFLICT(name)
+        \\DO UPDATE SET
+        \\  name = excluded.name,
+        \\  artist_id = excluded.artist_id,
+        \\  album_id = excluded.album_id,
+        \\  release_date = excluded.release_date,
+        \\  number = excluded.number
     ,
         .{ .diags = &diags },
         .{
