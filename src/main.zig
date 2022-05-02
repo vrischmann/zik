@@ -114,7 +114,7 @@ fn cmdConfig(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8)
             .{ .diags = &diags },
             .{ .key = key },
         ) catch |err| {
-            print("unable to get config value, err: {s}\n", .{diags});
+            print("unable to get config value, diagnostics: {s}, err: {s}\n", .{ diags, err });
             return err;
         };
 
@@ -491,8 +491,8 @@ fn getConfig(comptime Tag: meta.Tag(Config), allocator: mem.Allocator, db: *sqli
         .{ .key = key },
     );
     if (value == null) {
-        print("unable to get config `{s}`, err: {s}\n", .{ key, diags });
-        return null;
+        print("no value for config `{s}`", .{key});
+        return error.Explained;
     }
 
     return @unionInit(Config, @tagName(Tag), value.?);
@@ -516,7 +516,7 @@ fn setConfig(allocator: mem.Allocator, db: *sqlite.Db, config: Config) !void {
             .value = config,
         },
     ) catch |err| {
-        print("unable to set config `{s}`, err: {s}\n", .{ key, diags });
+        print("unable to set config `{s}`, err: {s}", .{ key, diags });
         return err;
     };
 }
@@ -713,7 +713,7 @@ fn initDatabase(db: *sqlite.Db) !void {
     inline for (ddls) |ddl| {
         var diags = sqlite.Diagnostics{};
         db.exec(ddl, .{ .diags = &diags }, .{}) catch |err| {
-            print("unable to execute statement, err: {s}\n", .{diags});
+            print("unable to execute statement, err: {s}", .{diags});
             return err;
         };
     }
