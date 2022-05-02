@@ -290,13 +290,16 @@ const MMapableFile = union(enum) {
     }
 };
 
-const ExtractMetadataError = error{
-    Explained,
-} || time.Timer.Error || mem.Allocator.Error || MMapableFile.OpenError || fs.File.OpenError || os.SeekError || MyMetadata.FromAudioMetaError;
-
 const ExtractMetadataOptions = struct {
     use_mmap: bool = false,
 };
+
+const ExtractMetadataError = error{
+    Explained,
+} || time.Timer.Error || mem.Allocator.Error || MMapableFile.OpenError || os.SeekError ||
+    sqlite.Savepoint.InitError ||
+    GetArtistIDError ||
+    MyMetadata.FromAudioMetaError;
 
 fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walker.WalkerEntry, options: ExtractMetadataOptions) ExtractMetadataError!void {
     _ = db;
@@ -323,17 +326,34 @@ fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walke
         break :blk null;
     };
 
-    if (metadata) |md| {
-        print("artist=\"{s}\", album=\"{s}\", album artist=\"{s}\", release date=\"{s}\", track number={d}", .{
-            md.artist,
-            md.album,
-            md.album_artist,
-            md.release_date,
-            md.track_number,
-        });
+    if (metadata == null) return;
 
-        return;
-    }
+    const md = metadata.?;
+
+    //
+
+    var savepoint = try db.savepoint("save_file_metadata");
+    defer savepoint.rollback();
+
+    // Find the artist
+    const artist = md.artist orelse "Unknown";
+    const artist_id = try getArtistID(db, artist);
+
+    // Find the album
+    const album = md.album orelse "Unknown";
+    const album_id = try getAlbumID(db, artist_id, album);
+
+    print("artist=\"{s}\" (id={d}), album=\"{s}\" (id={d}), album artist=\"{s}\", release date=\"{s}\", track number={d}", .{
+        artist,
+        artist_id,
+        album,
+        album_id,
+        md.album_artist,
+        md.release_date,
+        md.track_number,
+    });
+
+    savepoint.commit();
 
     // TODO(vincent): use the collator when ready
     // var collator = audiometa.collate.Collator.init(allocator, &metadata);
@@ -491,6 +511,74 @@ fn setConfig(allocator: mem.Allocator, db: *sqlite.Db, config: Config) !void {
     };
 }
 
+const GetArtistIDError = error{
+    Workaround,
+    Explained,
+} || sqlite.Error;
+
+fn getArtistID(db: *sqlite.Db, name: []const u8) GetArtistIDError!usize {
+    var diags = sqlite.Diagnostics{};
+
+    const id_opt = db.one(
+        usize,
+        "SELECT id FROM artist WHERE name = $name{[]const u8}",
+        .{ .diags = &diags },
+        .{ .name = name },
+    ) catch {
+        print("unable to get artist ID for name \"{s}\", err: {s}", .{ name, diags });
+        return error.Explained;
+    };
+    if (id_opt) |id| return id;
+
+    db.exec(
+        "INSERT INTO artist(name) VALUES($name{[]const u8})",
+        .{ .diags = &diags },
+        .{ .name = name },
+    ) catch {
+        print("unable to insert artist \"{s}\", err: {s}", .{ name, diags });
+        return error.Explained;
+    };
+
+    return @intCast(usize, db.getLastInsertRowID());
+}
+
+const GetAlbumIDError = error{
+    Workaround,
+    Explained,
+} || sqlite.Error;
+
+fn getAlbumID(db: *sqlite.Db, artist_id: usize, name: []const u8) GetAlbumIDError!usize {
+    var diags = sqlite.Diagnostics{};
+
+    const id_opt = db.one(
+        usize,
+        "SELECT id FROM album WHERE artist_id = $artist_id{usize} AND name = $name{[]const u8}",
+        .{ .diags = &diags },
+        .{
+            .artist_id = artist_id,
+            .name = name,
+        },
+    ) catch {
+        print("unable to get album ID for name \"{s}\" and artist ID {d}, err: {s}", .{ name, artist_id, diags });
+        return error.Explained;
+    };
+    if (id_opt) |id| return id;
+
+    db.exec(
+        "INSERT INTO album(artist_id, name) VALUES($artist_id{usize}, $name{[]const u8})",
+        .{ .diags = &diags },
+        .{
+            .artist_id = artist_id,
+            .name = name,
+        },
+    ) catch {
+        print("unable to insert album \"{s}\" and artist ID {d}, err: {s}", .{ name, artist_id, diags });
+        return error.Explained;
+    };
+
+    return @intCast(usize, db.getLastInsertRowID());
+}
+
 fn openDatabase(allocator: mem.Allocator) !sqlite.Db {
     var arena = heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -536,6 +624,8 @@ fn initDatabase(db: *sqlite.Db) !void {
         \\  name TEXT
         \\) STRICT
         ,
+        \\CREATE INDEX IF NOT EXISTS artist_name ON artist(name)
+        ,
         \\CREATE TABLE IF NOT EXISTS album(
         \\  id INTEGER PRIMARY KEY,
         \\  name INTEGER,
@@ -545,6 +635,8 @@ fn initDatabase(db: *sqlite.Db) !void {
         \\
         \\  FOREIGN KEY(artist_id) REFERENCES artist(id)
         \\) STRICT
+        ,
+        \\CREATE INDEX IF NOT EXISTS album_name ON album(name)
         ,
         \\CREATE TABLE IF NOT EXISTS track(
         \\  id INTEGER PRIMARY KEY,
