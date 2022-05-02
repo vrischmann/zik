@@ -314,21 +314,16 @@ fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walke
         var metadata = try audiometa.metadata.readAll(allocator, &stream_source);
         defer metadata.deinit();
 
-        var result = try std.ArrayList(MyMetadata).initCapacity(allocator, metadata.tags.len);
         for (metadata.tags) |tag| {
             if (try MyMetadata.fromAudiometa(allocator, tag)) |md| {
-                try result.append(md);
+                break :blk md;
             }
         }
 
-        break :blk result;
+        break :blk null;
     };
 
-    if (metadata.items.len <= 0) {
-        return;
-    }
-
-    for (metadata.items) |md| {
+    if (metadata) |md| {
         print("artist=\"{s}\", album=\"{s}\", album artist=\"{s}\", release date=\"{s}\", track number={d}", .{
             md.artist,
             md.album,
@@ -336,6 +331,8 @@ fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walke
             md.release_date,
             md.track_number,
         });
+
+        return;
     }
 
     // TODO(vincent): use the collator when ready
