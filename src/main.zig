@@ -226,19 +226,90 @@ const MyMetadata = struct {
     }
 };
 
+/// MMapableFile wraps a file and mmap's it if the user wants it.
+/// It owns both the file and the mmapped memory slice if set.
+const MMapableFile = union(enum) {
+    const Self = @This();
+
+    file: fs.File,
+    mmapped_file: struct {
+        file: fs.File,
+        file_bytes: []align(mem.page_size) u8,
+        fbs: io.FixedBufferStream([]u8),
+    },
+
+    const OpenError = fs.File.OpenError || fs.File.StatError || os.MMapError;
+
+    /// Opens the file `basename` under `dir`, using mmap if asked.
+    /// Call `close` to release the associated resources.
+    fn open(dir: fs.Dir, basename: []const u8, flags: struct { use_mmap: bool }) OpenError!Self {
+        var file = try dir.openFile(basename, .{});
+
+        if (flags.use_mmap) {
+            const stat = try file.stat();
+            const file_size = @intCast(usize, stat.size);
+
+            const file_bytes = try os.mmap(
+                null,
+                mem.alignForward(file_size, mem.page_size),
+                os.PROT.READ,
+                os.MAP.PRIVATE,
+                file.handle,
+                0,
+            );
+
+            return Self{
+                .mmapped_file = .{
+                    .file = file,
+                    .file_bytes = file_bytes,
+                    .fbs = io.fixedBufferStream(@ptrCast([]u8, file_bytes)),
+                },
+            };
+        } else {
+            return Self{
+                .file = file,
+            };
+        }
+    }
+
+    pub fn close(self: *Self) void {
+        switch (self.*) {
+            .file => |f| f.close(),
+            .mmapped_file => |mf| {
+                os.munmap(mf.file_bytes);
+                mf.file.close();
+            },
+        }
+    }
+
+    pub fn streamSource(self: *Self) io.StreamSource {
+        switch (self.*) {
+            .file => |f| return io.StreamSource{ .file = f },
+            .mmapped_file => |mf| return io.StreamSource{ .buffer = mf.fbs },
+        }
+    }
+};
+
 const ExtractMetadataError = error{
     Explained,
-} || time.Timer.Error || mem.Allocator.Error || fs.File.OpenError || os.SeekError || MyMetadata.FromAudioMetaError;
+} || time.Timer.Error || mem.Allocator.Error || MMapableFile.OpenError || fs.File.OpenError || os.SeekError || MyMetadata.FromAudioMetaError;
 
-fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walker.WalkerEntry) ExtractMetadataError!void {
-    _ = allocator;
+const ExtractMetadataOptions = struct {
+    use_mmap: bool = false,
+};
+
+fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walker.WalkerEntry, options: ExtractMetadataOptions) ExtractMetadataError!void {
     _ = db;
 
-    var metadata = blk: {
-        var file = try entry.dir.openFile(entry.basename, .{});
-        defer file.close();
+    print("file {s}", .{entry.path});
 
-        var stream_source = io.StreamSource{ .file = file };
+    var metadata = blk: {
+        var mmappable_file = try MMapableFile.open(entry.dir, entry.basename, .{
+            .use_mmap = options.use_mmap,
+        });
+        defer mmappable_file.close();
+
+        var stream_source = mmappable_file.streamSource();
 
         var metadata = try audiometa.metadata.readAll(allocator, &stream_source);
         defer metadata.deinit();
@@ -278,7 +349,11 @@ const ScanError = error{
     Explained,
 } || mem.Allocator.Error || fs.File.OpenError || ExtractMetadataError;
 
-fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8) ScanError!void {
+const ScanOptions = struct {
+    use_mmap: bool = false,
+};
+
+fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8, options: ScanOptions) ScanError!void {
     var dir = try openLibraryPath(path);
     defer dir.close();
 
@@ -294,7 +369,11 @@ fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8) ScanError!
                 var per_file_arena = heap.ArenaAllocator.init(allocator);
                 defer per_file_arena.deinit();
 
-                try extractMetadata(per_file_arena.allocator(), db, entry);
+                var extract_options = ExtractMetadataOptions{
+                    .use_mmap = options.use_mmap,
+                };
+
+                try extractMetadata(per_file_arena.allocator(), db, entry, extract_options);
             },
             else => continue,
         }
@@ -304,6 +383,7 @@ fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8) ScanError!
 fn cmdScan(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !void {
     // Parse the arguments and options
 
+    var options = ScanOptions{};
     {
         var i: usize = 0;
         while (i < args.len) : (i += 1) {
@@ -311,11 +391,10 @@ fn cmdScan(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !
             if (mem.eql(u8, "-h", arg) or mem.eql(u8, "--help", arg)) {
                 print(scan_usage, .{});
                 return error.Explained;
+            } else if (mem.eql(u8, "--use-mmap", arg)) {
+                options.use_mmap = true;
+                i += 1;
             }
-
-            // } else if (mem.eql(u8, "-d", arg) or mem.eql(u8, "--directory", arg)) {
-            //     if (i + 1 >= args.len) fatal("expected argument after \"{s}\"", .{arg});
-            //     i += 1;
         }
     }
 
@@ -325,9 +404,9 @@ fn cmdScan(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !
 
         debug.assert(meta.activeTag(config) == .library);
 
-        doScan(allocator, db, config.library) catch |err| switch (err) {
+        doScan(allocator, db, config.library, options) catch |err| switch (err) {
             error.Explained => return err,
-            else => return err,
+            else => return err, // TODO(vincent): error handling
         };
     } else {
         print("no library configured", .{});
