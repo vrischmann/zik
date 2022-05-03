@@ -278,9 +278,9 @@ fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walke
 
     // Save the track
 
-    const track_id = try saveTrack(db, artist_id, album_id, md);
+    try saveTrack(db, artist_id, album_id, md);
 
-    print("artist=\"{s}\" (id={d}), album=\"{s}\" (id={d}), album artist=\"{s}\", release date=\"{s}\", track=\"{s}\" (id={d}), track number={d}", .{
+    print("artist=\"{s}\" (id={d}), album=\"{s}\" (id={d}), album artist=\"{s}\", release date=\"{s}\", track=\"{s}\", track number={d}", .{
         artist,
         artist_id,
         album,
@@ -288,7 +288,6 @@ fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walke
         md.album_artist,
         md.release_date,
         md.track_name,
-        track_id,
         md.track_number,
     });
 
@@ -509,7 +508,7 @@ fn saveAlbum(db: *sqlite.Db, artist_id: usize, name: []const u8) SaveDataError!A
     return @intCast(usize, db.getLastInsertRowID());
 }
 
-fn saveTrack(db: *sqlite.Db, artist_id: ArtistID, album_id: AlbumID, metadata: MyMetadata) SaveDataError!TrackID {
+fn saveTrack(db: *sqlite.Db, artist_id: ArtistID, album_id: AlbumID, metadata: MyMetadata) SaveDataError!void {
     var diags = sqlite.Diagnostics{};
 
     db.exec(
@@ -547,8 +546,6 @@ fn saveTrack(db: *sqlite.Db, artist_id: ArtistID, album_id: AlbumID, metadata: M
         });
         return error.Explained;
     };
-
-    return @intCast(usize, db.getLastInsertRowID());
 }
 
 fn openDatabase(allocator: mem.Allocator) !sqlite.Db {
