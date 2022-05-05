@@ -206,8 +206,8 @@ const MyMetadata = struct {
                     .album_artist = try dupeOrNull(allocator, flac_meta.map.getFirst("ALBUMARTIST")),
                     .release_date = try dupeOrNull(allocator, flac_meta.map.getFirst("DATE")),
                     .track_name = try dupeOrNull(allocator, flac_meta.map.getFirst("TITLE")),
-                    .track_number = if (flac_meta.map.getFirst("TRACKNUMBER")) |date|
-                        try fmt.parseInt(usize, date, 10)
+                    .track_number = if (flac_meta.map.getFirst("TRACKNUMBER")) |n|
+                        try fmt.parseInt(usize, n, 10)
                     else
                         0,
                 };
@@ -219,6 +219,25 @@ const MyMetadata = struct {
                     .album_artist = try dupeOrNull(allocator, mp4_meta.map.getFirst("aART")),
                     .release_date = try dupeOrNull(allocator, mp4_meta.map.getFirst("\xA9day")),
                     .track_name = try dupeOrNull(allocator, mp4_meta.map.getFirst("\xA9nam")),
+                    .track_number = if (mp4_meta.map.getFirst("trkn")) |n|
+                        try fmt.parseInt(usize, n, 10)
+                    else if (mp4_meta.map.getFirst("disk")) |n|
+                        try fmt.parseInt(usize, n, 10)
+                    else
+                        0,
+                };
+            },
+            .id3v2 => |id3v2_meta| {
+                return MyMetadata{
+                    .artist = try dupeOrNull(allocator, id3v2_meta.metadata.map.getFirst("TPE1")),
+                    .album = try dupeOrNull(allocator, id3v2_meta.metadata.map.getFirst("TALB")),
+                    .album_artist = try dupeOrNull(allocator, id3v2_meta.metadata.map.getFirst("TPE2")),
+                    .release_date = try dupeOrNull(allocator, id3v2_meta.metadata.map.getFirst("TYER")),
+                    .track_name = try dupeOrNull(allocator, id3v2_meta.metadata.map.getFirst("TIT2")),
+                    .track_number = if (id3v2_meta.metadata.map.getFirst("TRCK")) |n|
+                        try fmt.parseInt(usize, n, 10)
+                    else
+                        0,
                 };
             },
             else => return null,
