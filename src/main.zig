@@ -548,19 +548,31 @@ fn saveTrack(db: *sqlite.Db, artist_id: ArtistID, album_id: AlbumID, metadata: M
     };
 }
 
-fn openDatabase(allocator: mem.Allocator) !sqlite.Db {
+const OpenDatabaseError = error{
+    Explained,
+} || mem.Allocator.Error || os.MakeDirError || sqlite.Db.InitError || known_folders.Error;
+
+fn openDatabase(allocator: mem.Allocator) OpenDatabaseError!sqlite.Db {
     var arena = heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
-    var data_directory = (try known_folders.getPath(arena.allocator(), .data)) orelse return error.UnknownDataFolder;
+    const data_directory_opt = try known_folders.getPath(arena.allocator(), .data);
+    if (data_directory_opt == null) {
+        print("can't find user data directory", .{});
+        return error.Explained;
+    }
 
     // Create the zik data directory
 
     var zik_directory = try fs.path.join(arena.allocator(), &.{
-        data_directory, "zik",
+        data_directory_opt.?, "zik",
     });
     fs.makeDirAbsolute(zik_directory) catch |err| switch (err) {
         error.PathAlreadyExists => {},
+        error.AccessDenied => {
+            print("can't create directory \"{s}\", permission denied", .{zik_directory});
+            return error.Explained;
+        },
         else => return err,
     };
 
@@ -664,7 +676,10 @@ pub fn main() anyerror!u8 {
 
     // Initialize the sqlite instance
 
-    var db = try openDatabase(allocator);
+    var db = openDatabase(allocator) catch |err| switch (err) {
+        error.Explained => return 1,
+        else => return err,
+    };
     defer db.deinit();
 
     try initDatabase(&db);
