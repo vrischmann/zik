@@ -293,7 +293,7 @@ fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walke
 
     // Find the album
     const album = md.album orelse "Unknown";
-    const album_id = try saveAlbum(db, artist_id, album);
+    const album_id = try saveAlbum(db, artist_id, album, md.year);
 
     // Save the track
 
@@ -502,7 +502,7 @@ fn saveArtist(db: *sqlite.Db, name: []const u8) SaveDataError!usize {
     return @intCast(usize, db.getLastInsertRowID());
 }
 
-fn saveAlbum(db: *sqlite.Db, artist_id: usize, name: []const u8) SaveDataError!AlbumID {
+fn saveAlbum(db: *sqlite.Db, artist_id: usize, name: []const u8, year: ?[]const u8) SaveDataError!AlbumID {
     var diags = sqlite.Diagnostics{};
 
     const id_opt = db.one(
@@ -520,11 +520,14 @@ fn saveAlbum(db: *sqlite.Db, artist_id: usize, name: []const u8) SaveDataError!A
     if (id_opt) |id| return id;
 
     db.exec(
-        "INSERT INTO album(artist_id, name) VALUES($artist_id{usize}, $name{[]const u8})",
+        \\INSERT INTO album(artist_id, name, year)
+        \\VALUES($artist_id{usize}, $name{[]const u8}, $year{?[]const u8})
+    ,
         .{ .diags = &diags },
         .{
             .artist_id = artist_id,
             .name = name,
+            .year = year,
         },
     ) catch {
         print("unable to insert album \"{s}\" and artist ID {d}, err: {s}", .{ name, artist_id, diags });
