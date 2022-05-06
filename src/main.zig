@@ -732,7 +732,11 @@ pub fn main() anyerror!u8 {
     const res = if (mem.eql(u8, "config", command))
         cmdConfig(allocator, &db, args)
     else if (mem.eql(u8, "scan", command))
-        cmdScan(allocator, &db, args);
+        cmdScan(allocator, &db, args)
+    else {
+        print(usage, .{});
+        return 0;
+    };
 
     res catch |err| switch (err) {
         error.Explained => return 1,
