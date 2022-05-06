@@ -184,7 +184,7 @@ const MyMetadata = struct {
     artist: ?[]const u8 = null,
     album: ?[]const u8 = null,
     album_artist: ?[]const u8 = null,
-    release_date: ?[]const u8 = null,
+    year: ?[]const u8 = null,
     track_name: ?[]const u8 = null,
     track_number: usize = 0,
 
@@ -204,7 +204,7 @@ const MyMetadata = struct {
                     .artist = try dupeOrNull(allocator, flac_meta.map.getFirst("ARTIST")),
                     .album = try dupeOrNull(allocator, flac_meta.map.getFirst("ALBUM")),
                     .album_artist = try dupeOrNull(allocator, flac_meta.map.getFirst("ALBUMARTIST")),
-                    .release_date = try dupeOrNull(allocator, flac_meta.map.getFirst("DATE")),
+                    .year = try dupeOrNull(allocator, flac_meta.map.getFirst("DATE")),
                     .track_name = try dupeOrNull(allocator, flac_meta.map.getFirst("TITLE")),
                     .track_number = if (flac_meta.map.getFirst("TRACKNUMBER")) |n|
                         try fmt.parseInt(usize, n, 10)
@@ -217,7 +217,7 @@ const MyMetadata = struct {
                     .artist = try dupeOrNull(allocator, mp4_meta.map.getFirst("\xA9ART")),
                     .album = try dupeOrNull(allocator, mp4_meta.map.getFirst("\xA9alb")),
                     .album_artist = try dupeOrNull(allocator, mp4_meta.map.getFirst("aART")),
-                    .release_date = try dupeOrNull(allocator, mp4_meta.map.getFirst("\xA9day")),
+                    .year = try dupeOrNull(allocator, mp4_meta.map.getFirst("\xA9day")),
                     .track_name = try dupeOrNull(allocator, mp4_meta.map.getFirst("\xA9nam")),
                     .track_number = if (mp4_meta.map.getFirst("trkn")) |n|
                         try fmt.parseInt(usize, n, 10)
@@ -232,7 +232,7 @@ const MyMetadata = struct {
                     .artist = try dupeOrNull(allocator, id3v2_meta.metadata.map.getFirst("TPE1")),
                     .album = try dupeOrNull(allocator, id3v2_meta.metadata.map.getFirst("TALB")),
                     .album_artist = try dupeOrNull(allocator, id3v2_meta.metadata.map.getFirst("TPE2")),
-                    .release_date = try dupeOrNull(allocator, id3v2_meta.metadata.map.getFirst("TYER")),
+                    .year = try dupeOrNull(allocator, id3v2_meta.metadata.map.getFirst("TYER")),
                     .track_name = try dupeOrNull(allocator, id3v2_meta.metadata.map.getFirst("TIT2")),
                     .track_number = if (id3v2_meta.metadata.map.getFirst("TRCK")) |n|
                         try fmt.parseInt(usize, n, 10)
@@ -299,13 +299,13 @@ fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walke
 
     try saveTrack(db, artist_id, album_id, md);
 
-    print("artist=\"{s}\" (id={d}), album=\"{s}\" (id={d}), album artist=\"{s}\", release date=\"{s}\", track=\"{s}\", track number={d}", .{
+    print("artist=\"{s}\" (id={d}), album=\"{s}\" (id={d}), album artist=\"{s}\", year=\"{s}\", track=\"{s}\", track number={d}", .{
         artist,
         artist_id,
         album,
         album_id,
         md.album_artist,
-        md.release_date,
+        md.year,
         md.track_name,
         md.track_number,
     });
@@ -538,12 +538,12 @@ fn saveTrack(db: *sqlite.Db, artist_id: ArtistID, album_id: AlbumID, metadata: M
     var diags = sqlite.Diagnostics{};
 
     db.exec(
-        \\INSERT INTO track(name, artist_id, album_id, release_date, number)
+        \\INSERT INTO track(name, artist_id, album_id, year, number)
         \\VALUES(
         \\  $name{?[]const u8},
         \\  $artist_id{usize},
         \\  $album_id{usize},
-        \\  $release_date{?[]const u8},
+        \\  $year{?[]const u8},
         \\  $number{usize}
         \\)
         \\ON CONFLICT(name)
@@ -551,7 +551,7 @@ fn saveTrack(db: *sqlite.Db, artist_id: ArtistID, album_id: AlbumID, metadata: M
         \\  name = excluded.name,
         \\  artist_id = excluded.artist_id,
         \\  album_id = excluded.album_id,
-        \\  release_date = excluded.release_date,
+        \\  year = excluded.year,
         \\  number = excluded.number
     ,
         .{ .diags = &diags },
@@ -559,7 +559,7 @@ fn saveTrack(db: *sqlite.Db, artist_id: ArtistID, album_id: AlbumID, metadata: M
             .name = metadata.track_name,
             .artist_id = artist_id,
             .album_id = album_id,
-            .release_date = metadata.release_date,
+            .year = metadata.year,
             .number = metadata.track_number,
         },
     ) catch {
@@ -638,7 +638,7 @@ fn initDatabase(db: *sqlite.Db) !void {
         \\  name TEXT,
         \\  artist_id INTEGER,
         \\  album_artist_id INTEGER,
-        \\  release_date TEXT,
+        \\  year TEXT,
         \\
         \\  FOREIGN KEY(artist_id) REFERENCES artist(id) ON DELETE CASCADE
         \\) STRICT
@@ -650,7 +650,7 @@ fn initDatabase(db: *sqlite.Db) !void {
         \\  name TEXT UNIQUE,
         \\  artist_id INTEGER,
         \\  album_id INTEGER,
-        \\  release_date TEXT,
+        \\  year TEXT,
         \\  number INTEGER,
         \\
         \\  FOREIGN KEY(artist_id) REFERENCES artist(id) ON DELETE CASCADE,
