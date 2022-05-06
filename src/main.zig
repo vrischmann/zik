@@ -338,6 +338,13 @@ fn doScan(allocator: mem.Allocator, db: *sqlite.Db, path: []const u8, options: S
     var savepoint = try db.savepoint("save_file_metadata");
     defer savepoint.rollback();
 
+    // We completely recreate the database later anyway so just delete everything.
+    var diags = sqlite.Diagnostics{};
+    db.exec("DELETE FROM artist", .{ .diags = &diags }, .{}) catch {
+        print("can't truncate artist table, err: {}", .{diags});
+        return error.Explained;
+    };
+
     while (try walker.next()) |entry| {
         switch (entry.kind) {
             .File, .SymLink => {
@@ -633,7 +640,7 @@ fn initDatabase(db: *sqlite.Db) !void {
         \\  album_artist_id INTEGER,
         \\  release_date TEXT,
         \\
-        \\  FOREIGN KEY(artist_id) REFERENCES artist(id)
+        \\  FOREIGN KEY(artist_id) REFERENCES artist(id) ON DELETE CASCADE
         \\) STRICT
         ,
         \\CREATE INDEX IF NOT EXISTS album_name ON album(name)
@@ -646,8 +653,8 @@ fn initDatabase(db: *sqlite.Db) !void {
         \\  release_date TEXT,
         \\  number INTEGER,
         \\
-        \\  FOREIGN KEY(artist_id) REFERENCES artist(id),
-        \\  FOREIGN KEY(album_id) REFERENCES album(id)
+        \\  FOREIGN KEY(artist_id) REFERENCES artist(id) ON DELETE CASCADE,
+        \\  FOREIGN KEY(album_id) REFERENCES album(id) ON DELETE CASCADE
         \\) STRICT
     };
 
