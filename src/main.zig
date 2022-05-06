@@ -463,6 +463,17 @@ fn cmdQuery(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) 
         print(query_usage, .{});
         return error.Explained;
     }
+
+    {
+        var i: usize = 0;
+        while (i < args.len) : (i += 1) {
+            const arg = args[i];
+            if (mem.eql(u8, "-h", arg) or mem.eql(u8, "--help", arg)) {
+                print(query_usage, .{});
+                return error.Explained;
+            }
+        }
+    }
 }
 
 fn openLibraryPath(path: []const u8) !fs.Dir {
