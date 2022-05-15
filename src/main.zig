@@ -15,6 +15,7 @@ const mibu = @import("mibu");
 const sqlite = @import("sqlite");
 
 const MMapableFile = @import("mmappable_file.zig").MMapableFile;
+const Query = @import("Query.zig");
 
 const usage =
     mibu.color.print.fg(.yellow) ++ "Usage" ++ mibu.color.print.reset ++
@@ -41,6 +42,12 @@ const scan_usage =
     \\: zik scan [options]
     \\
     \\
+++ mibu.style.print.bold ++ "Description" ++ mibu.style.print.reset ++
+    \\
+    \\
+    \\  Scan the music library.
+    \\
+    \\
 ++ mibu.style.print.bold ++ "Options" ++ mibu.style.print.reset ++
     \\
     \\
@@ -58,6 +65,39 @@ const config_usage =
     \\
     \\  Get or set options.
     \\  If value is not present the option value will be printed.
+    \\
+;
+
+// TODO(vincent): fugly
+const query_usage =
+    mibu.color.print.fg(.yellow) ++ "Usage" ++ mibu.color.print.reset ++
+    \\: zik query <query string>
+    \\
+    \\
+++ mibu.style.print.bold ++ "Description" ++ mibu.style.print.reset ++
+    \\
+    \\
+    \\  Query your music library using a simple query language.
+    \\  The query language is composed of a set of key-operator-value pairs.
+    \\  For example:
+    \\
+++ mibu.style.print.bold ++ fmt.comptimePrint("\n    genre{s}Metal year{s}2000\n", .{
+    mibu.color.print.fg(.green) ++ "=" ++ mibu.color.print.reset,
+    mibu.color.print.fg(.green) ++ ">" ++ mibu.color.print.reset,
+}) ++ mibu.style.print.reset ++ mibu.style.print.bold ++ fmt.comptimePrint("    artist{s}Bloodywood\n", .{
+    mibu.color.print.fg(.green) ++ "=~" ++ mibu.color.print.reset,
+}) ++ mibu.style.print.reset ++
+    \\
+    \\  The available operators are:
+    \\  - `=` for a case insensitive equality check
+    \\  - `=~` for a case insensitive "contains" check
+    \\  - `!=` for a case insensitive non-equality check
+    \\
+    \\  The available queryable keys are:
+    \\  - `artist` and `album_artist`
+    \\  - `album`
+    \\  - `year`
+    \\  - `genre`
     \\
 ;
 
@@ -416,6 +456,27 @@ fn cmdScan(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !
     }
 }
 
+fn cmdQuery(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !void {
+    _ = allocator;
+    _ = db;
+
+    if (args.len < 1) {
+        print(query_usage, .{});
+        return error.Explained;
+    }
+
+    {
+        var i: usize = 0;
+        while (i < args.len) : (i += 1) {
+            const arg = args[i];
+            if (mem.eql(u8, "-h", arg) or mem.eql(u8, "--help", arg)) {
+                print(query_usage, .{});
+                return error.Explained;
+            }
+        }
+    }
+}
+
 fn openLibraryPath(path: []const u8) !fs.Dir {
     return fs.cwd().openDir(path, .{ .iterate = true }) catch |err| switch (err) {
         error.FileNotFound => {
@@ -751,6 +812,8 @@ pub fn main() anyerror!u8 {
         cmdConfig(allocator, &db, args)
     else if (mem.eql(u8, "scan", command))
         cmdScan(allocator, &db, args)
+    else if (mem.eql(u8, "query", command))
+        cmdQuery(allocator, &db, args)
     else {
         print(usage, .{});
         return 0;
@@ -762,4 +825,10 @@ pub fn main() anyerror!u8 {
     };
 
     return 0;
+}
+
+test "" {
+    _ = Query;
+
+    std.testing.refAllDecls(@This());
 }

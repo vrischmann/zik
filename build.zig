@@ -1,5 +1,13 @@
 const std = @import("std");
 
+fn addDeps(step: *std.build.LibExeObjStep) void {
+    step.addPackagePath("audiometa", "third_party/audiometa/src/audiometa.zig");
+    step.addPackagePath("sqlite", "third_party/zig-sqlite/sqlite.zig");
+    step.addPackagePath("mibu", "third_party/mibu/src/main.zig");
+    step.addPackagePath("known-folders", "third_party/known-folders/known-folders.zig");
+    step.addPackagePath("mecha", "third_party/mecha/mecha.zig");
+}
+
 pub fn build(b: *std.build.Builder) !void {
     var target = b.standardTargetOptions(.{});
     const target_info = try std.zig.system.NativeTargetInfo.detect(b.allocator, target);
@@ -20,12 +28,9 @@ pub fn build(b: *std.build.Builder) !void {
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.addIncludeDir("third_party/zig-sqlite/c");
-    exe.addPackagePath("audiometa", "third_party/audiometa/src/audiometa.zig");
-    exe.addPackagePath("sqlite", "third_party/zig-sqlite/sqlite.zig");
-    exe.addPackagePath("mibu", "third_party/mibu/src/main.zig");
-    exe.addPackagePath("known-folders", "third_party/known-folders/known-folders.zig");
     exe.linkLibC();
     exe.linkLibrary(sqlite);
+    addDeps(exe);
     exe.install();
 
     const run_cmd = exe.run();
@@ -36,4 +41,15 @@ pub fn build(b: *std.build.Builder) !void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    const exe_tests = b.addTest("src/main.zig");
+    exe_tests.setTarget(target);
+    exe_tests.setBuildMode(mode);
+    exe_tests.addIncludeDir("third_party/zig-sqlite/c");
+    exe_tests.linkLibC();
+    exe_tests.linkLibrary(sqlite);
+    addDeps(exe_tests);
+
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&exe_tests.step);
 }
