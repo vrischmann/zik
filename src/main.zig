@@ -15,6 +15,7 @@ const mibu = @import("mibu");
 const sqlite = @import("sqlite");
 
 const MMapableFile = @import("mmappable_file.zig").MMapableFile;
+const Query = @import("Query.zig");
 
 const usage =
     mibu.color.print.fg(.yellow) ++ "Usage" ++ mibu.color.print.reset ++
@@ -824,4 +825,10 @@ pub fn main() anyerror!u8 {
     };
 
     return 0;
+}
+
+test "" {
+    _ = Query;
+
+    std.testing.refAllDecls(@This());
 }

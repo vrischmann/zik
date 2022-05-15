@@ -4,17 +4,21 @@ const mem = std.mem;
 const meta = std.meta;
 const testing = std.testing;
 
+const mecha = @import("mecha");
+
 const Self = @This();
 
 pub const Key = enum {
     artist,
-    album_artist,
     album,
+    album_artist,
     year,
+    track,
+    track_number,
     genre,
 };
 
-pub const Operation = enum {
+pub const ComparisonOperator = enum {
     equal,
     not_equal,
     contains,
@@ -22,7 +26,7 @@ pub const Operation = enum {
 
 const Op = struct {
     key: Key,
-    operation: Operation,
+    operator: ComparisonOperator,
     value: []const u8,
 };
 
@@ -37,106 +41,100 @@ pub const ParseDiagnostics = struct {
 };
 
 pub fn parse(allocator: mem.Allocator, diags: *ParseDiagnostics, query_str: []const u8) !Self {
-    var ops = try std.ArrayList(Op).initCapacity(allocator, 4);
-    errdefer ops.deinit();
+    _ = diags;
 
-    // Parsing state
-    var state: enum {
-        key_start,
-        operation_start,
-        value_start,
-    } = .key_start;
+    const result = try parser.query(allocator, query_str);
+    defer allocator.free(result.value);
 
-    var scratch = try std.ArrayList(u8).initCapacity(allocator, 16);
-    defer scratch.deinit();
+    var ops = try allocator.alloc(Op, result.value.len);
+    errdefer allocator.free(ops);
 
-    var current_key: Key = undefined;
-    var current_operation: Operation = undefined;
+    for (ops) |*op, i| {
+        const res = result.value[i];
 
-    for (query_str) |ch, i| {
-        switch (state) {
-            .key_start => switch (ch) {
-                'a'...'z' => try scratch.append(ch),
-                '=', '!' => {
-                    current_key = meta.stringToEnum(Key, scratch.items) orelse return error.InvalidQueryKey;
-                    scratch.clearRetainingCapacity();
-
-                    try scratch.append(ch);
-                    state = .operation_start;
-                },
-                else => {
-                    diags.message = "invalid character in key";
-                    diags.pos = i;
-                    return error.InvalidQueryKey;
-                },
-            },
-            .operation_start => {
-                if (ch == '~' or ch == '=') {
-                    try scratch.append(ch);
-                }
-
-                current_operation = if (mem.eql(u8, "=~", scratch.items))
-                    Operation.contains
-                else if (mem.eql(u8, "!=", scratch.items))
-                    Operation.not_equal
-                else if (mem.eql(u8, "=", scratch.items))
-                    Operation.equal
-                else
-                    return error.InvalidQueryOperation;
-
-                scratch.clearRetainingCapacity();
-                try scratch.append(ch);
-
-                state = .value_start;
-            },
-            .value_start => switch (ch) {
-                ' ' => {
-                    try ops.append(.{
-                        .key = current_key,
-                        .operation = current_operation,
-                        .value = blk: {
-                            const value = scratch.toOwnedSlice();
-                            errdefer allocator.free(value);
-                            scratch.clearRetainingCapacity();
-
-                            break :blk value;
-                        },
-                    });
-
-                    current_key = undefined;
-                    current_operation = undefined;
-
-                    state = .key_start;
-                },
-                else => try scratch.append(ch),
-            },
-        }
+        op.* = .{
+            .key = res.key,
+            .operator = res.operator,
+            .value = res.value,
+        };
     }
-
-    try ops.append(.{
-        .key = current_key,
-        .operation = current_operation,
-        .value = blk: {
-            const value = scratch.toOwnedSlice();
-            errdefer allocator.free(value);
-            scratch.clearRetainingCapacity();
-
-            break :blk value;
-        },
-    });
 
     return Self{
         .allocator = allocator,
-        .ops = ops.toOwnedSlice(),
+        .ops = ops,
     };
 }
 
 pub fn deinit(self: *const Self) void {
-    for (self.ops) |*op| {
-        self.allocator.free(op.value);
-    }
+    // for (self.ops) |*op| {
+    //     self.allocator.free(op.value);
+    // }
     self.allocator.free(self.ops);
 }
+
+const parser = struct {
+    const key = mecha.enumeration(Key);
+
+    const cmp_op = mecha.oneOf(.{
+        mecha.map(ComparisonOperator, genCmpOp(.not_equal), mecha.string("!=")),
+        mecha.map(ComparisonOperator, genCmpOp(.contains), mecha.string("=~")),
+        mecha.map(ComparisonOperator, genCmpOp(.equal), mecha.string("=")),
+    });
+
+    const escape = mecha.oneOf(.{
+        mecha.ascii.char('"'),
+        mecha.ascii.char('\\'),
+    });
+
+    const value_string = mecha.many(
+        mecha.oneOf(.{
+            mecha.discard(mecha.utf8.range(0x0021, '"' - 1)),
+            mecha.discard(mecha.utf8.range('"' + 1, '\\' - 1)),
+            mecha.discard(mecha.utf8.range('\\' + 1, 0x10FFFF)),
+        }),
+        .{ .min = 1, .collect = false },
+    );
+    const escaped_value_string = mecha.combine(.{
+        mecha.ascii.char('"'),
+        mecha.many(
+            mecha.oneOf(.{
+                mecha.discard(mecha.utf8.range(0x0020, '"' - 1)),
+                mecha.discard(mecha.utf8.range('"' + 1, '\\' - 1)),
+                mecha.discard(mecha.utf8.range('\\' + 1, 0x10FFFF)),
+                mecha.combine(.{ mecha.ascii.char('\\'), escape }),
+            }),
+            .{ .min = 1, .collect = false },
+        ),
+        mecha.ascii.char('"'),
+    });
+
+    const value = mecha.oneOf(.{
+        escaped_value_string,
+        value_string,
+    });
+
+    const op_parser = mecha.map(Op, mecha.toStruct(Op), mecha.combine(.{
+        key,
+        cmp_op,
+        value,
+    }));
+
+    fn genCmpOp(comptime op: ComparisonOperator) fn (void) ComparisonOperator {
+        return struct {
+            fn func(_: void) ComparisonOperator {
+                return op;
+            }
+        }.func;
+    }
+
+    const query = mecha.many(
+        mecha.combine(.{
+            op_parser,
+            mecha.discard(mecha.many(mecha.ascii.space, .{ .collect = false })),
+        }),
+        .{ .min = 1 },
+    );
+};
 
 test "query parse" {
     const testCases = &[_]struct {
@@ -144,12 +142,37 @@ test "query parse" {
         exp: []const Op,
     }{
         .{
-            .query = "artist=Vincent",
+            .query = "artist=Vincent album=José",
             .exp = &[_]Op{
                 .{
                     .key = .artist,
-                    .operation = .equal,
+                    .operator = .equal,
                     .value = "Vincent",
+                },
+                .{
+                    .key = .album,
+                    .operator = .equal,
+                    .value = "José",
+                },
+            },
+        },
+        .{
+            .query = "artist=~\"   José  \" album!=\"   Vincent   \"         track=204",
+            .exp = &[_]Op{
+                .{
+                    .key = .artist,
+                    .operator = .contains,
+                    .value = "   José  ",
+                },
+                .{
+                    .key = .album,
+                    .operator = .not_equal,
+                    .value = "   Vincent   ",
+                },
+                .{
+                    .key = .track,
+                    .operator = .equal,
+                    .value = "204",
                 },
             },
         },
@@ -160,9 +183,12 @@ test "query parse" {
         const res = try parse(testing.allocator, &parse_diags, tc.query);
         defer res.deinit();
 
-        try testing.expectEqual(@as(usize, 1), res.ops.len);
-        try testing.expectEqual(Key.artist, res.ops[0].key);
-        try testing.expectEqual(Operation.equal, res.ops[0].operation);
-        try testing.expectEqualStrings("Vincent", res.ops[0].value);
+        try testing.expectEqual(@as(usize, tc.exp.len), res.ops.len);
+
+        for (tc.exp) |exp, i| {
+            try testing.expectEqual(exp.key, res.ops[i].key);
+            try testing.expectEqual(exp.operator, res.ops[i].operator);
+            try testing.expectEqualStrings(exp.value, res.ops[i].value);
+        }
     }
 }
