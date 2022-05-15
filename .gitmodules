@@ -10,3 +10,6 @@
 [submodule "third_party/known-folders"]
 	path = third_party/known-folders
 	url = git@github.com:vrischmann/known-folders.git
+[submodule "third_party/mecha"]
+	path = third_party/mecha
+	url = https://github.com/Hejsil/mecha.git
