@@ -357,7 +357,7 @@ fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walke
 
     try saveTrack(db, artist_id, album_id, md);
 
-    print("artist=\"{s}\" (id={d}), album=\"{s}\" (id={d}), album artist=\"{s}\", year=\"{s}\", track=\"{s}\", track number={d}", .{
+    print("artist=\"{s}\" (id={d}), album=\"{s}\" (id={d}), album artist=\"{s}\", year=\"{s}\", track=\"{s}\", track number={d}, genre=\"{s}\"", .{
         artist,
         artist_id,
         album,
@@ -366,6 +366,7 @@ fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walke
         md.year,
         md.track_name,
         md.track_number,
+        md.genre,
     });
 
     // TODO(vincent): use the collator when ready
