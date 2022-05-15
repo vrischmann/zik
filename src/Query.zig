@@ -22,6 +22,10 @@ pub const ComparisonOperator = enum {
     equal,
     not_equal,
     contains,
+    greater_than,
+    greater_than_or_equal,
+    less_than,
+    less_than_or_equal,
 };
 
 const Op = struct {
@@ -78,6 +82,10 @@ const parser = struct {
     const cmp_op = mecha.oneOf(.{
         mecha.map(ComparisonOperator, genCmpOp(.not_equal), mecha.string("!=")),
         mecha.map(ComparisonOperator, genCmpOp(.contains), mecha.string("=~")),
+        mecha.map(ComparisonOperator, genCmpOp(.greater_than_or_equal), mecha.string(">=")),
+        mecha.map(ComparisonOperator, genCmpOp(.less_than_or_equal), mecha.string("<=")),
+        mecha.map(ComparisonOperator, genCmpOp(.greater_than), mecha.string(">")),
+        mecha.map(ComparisonOperator, genCmpOp(.less_than), mecha.string("<")),
         mecha.map(ComparisonOperator, genCmpOp(.equal), mecha.string("=")),
     });
 
@@ -173,6 +181,21 @@ test "query parse" {
                     .key = .track,
                     .operator = .equal,
                     .value = "204",
+                },
+            },
+        },
+        .{
+            .query = "year>2000 track_number<=20",
+            .exp = &[_]Op{
+                .{
+                    .key = .year,
+                    .operator = .greater_than,
+                    .value = "2000",
+                },
+                .{
+                    .key = .track_number,
+                    .operator = .less_than_or_equal,
+                    .value = "20",
                 },
             },
         },
