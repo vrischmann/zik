@@ -187,6 +187,7 @@ const MyMetadata = struct {
     year: ?[]const u8 = null,
     track_name: ?[]const u8 = null,
     track_number: usize = 0,
+    genre: ?[]const u8 = null,
 
     pub const FromAudioMetaError = error{} || mem.Allocator.Error || fmt.ParseIntError;
 
@@ -195,6 +196,17 @@ const MyMetadata = struct {
             return try allocator.dupe(u8, data);
         }
         return null;
+    }
+
+    fn parseID3v1TCON(tcon: []const u8) []const u8 {
+        if (tcon.len < 3) return "";
+
+        const cleaned = tcon[1 .. tcon.len - 1];
+        const n = fmt.parseInt(usize, cleaned, 10) catch return "";
+
+        if (n >= audiometa.id3v1.id3v1_genre_names.len) return "";
+
+        return audiometa.id3v1.id3v1_genre_names[n];
     }
 
     fn fromAudiometa(allocator: mem.Allocator, md: audiometa.metadata.TypedMetadata) FromAudioMetaError!?MyMetadata {
@@ -210,6 +222,7 @@ const MyMetadata = struct {
                         try fmt.parseInt(usize, n, 10)
                     else
                         0,
+                    .genre = null, // TODO(vincent): doesn't seem to exist for FLAC files ?
                 };
             },
             .mp4 => |mp4_meta| {
@@ -225,6 +238,7 @@ const MyMetadata = struct {
                         try fmt.parseInt(usize, n, 10)
                     else
                         0,
+                    .genre = try dupeOrNull(allocator, mp4_meta.map.getFirst("\xA9gen")),
                 };
             },
             .id3v2 => |id3v2_meta| {
@@ -238,6 +252,10 @@ const MyMetadata = struct {
                         try fmt.parseInt(usize, n, 10)
                     else
                         0,
+                    .genre = if (id3v2_meta.metadata.map.getFirst("TCON")) |tcon|
+                        parseID3v1TCON(tcon)
+                    else
+                        null,
                 };
             },
             else => return null,
