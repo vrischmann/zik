@@ -134,6 +134,11 @@ fn cmdConfig(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8)
 
         const key = args[0];
 
+        if (mem.eql(u8, "-h", key) or mem.eql(u8, "--help", key)) {
+            print(query_usage, .{});
+            return error.Explained;
+        }
+
         const tag_opt = meta.stringToEnum(meta.Tag(Config), key);
         if (tag_opt == null) {
             print("no config named \"{s}\"", .{
