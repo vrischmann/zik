@@ -150,7 +150,7 @@ fn cmdConfig(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8)
             .{ .diags = &diags },
             .{ .key = key },
         ) catch |err| {
-            print("unable to get config value, diagnostics: {s}, err: {s}\n", .{ diags, err });
+            print("unable to get config value, diagnostics: {s}, err: {!}\n", .{ diags, err });
             return err;
         };
 
@@ -188,7 +188,7 @@ fn cmdConfig(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8)
                 var dir = try openLibraryPath(value);
                 defer dir.close();
 
-                const absolute_path = try dir.realpathAlloc(allocator, ".");
+                const absolute_path = try dir.dir.realpathAlloc(allocator, ".");
 
                 print("setting library to {s} (absolute path resolved from {s})", .{
                     absolute_path,
@@ -314,7 +314,7 @@ const ExtractMetadataError = error{
     SaveDataError ||
     MyMetadata.FromAudioMetaError;
 
-fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walker.WalkerEntry, options: ExtractMetadataOptions) ExtractMetadataError!void {
+fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.IterableDir.Walker.WalkerEntry, options: ExtractMetadataOptions) ExtractMetadataError!void {
     _ = db;
 
     print("file {s}", .{entry.path});
@@ -357,7 +357,7 @@ fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.Dir.Walke
 
     try saveTrack(db, artist_id, album_id, md);
 
-    print("artist=\"{s}\" (id={d}), album=\"{s}\" (id={d}), album artist=\"{s}\", year=\"{s}\", track=\"{s}\", track number={d}, genre=\"{s}\"", .{
+    print("artist=\"{s}\" (id={d}), album=\"{s}\" (id={d}), album artist=\"{?s}\", year=\"{?s}\", track=\"{?s}\", track number={d}, genre=\"{?s}\"", .{
         artist,
         artist_id,
         album,
@@ -478,8 +478,8 @@ fn cmdQuery(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) 
     }
 }
 
-fn openLibraryPath(path: []const u8) !fs.Dir {
-    return fs.cwd().openDir(path, .{ .iterate = true }) catch |err| switch (err) {
+fn openLibraryPath(path: []const u8) !fs.IterableDir {
+    return fs.cwd().openIterableDir(path, .{}) catch |err| switch (err) {
         error.FileNotFound => {
             print("path \"{s}\" doesn't exist", .{path});
             return error.Explained;
@@ -492,7 +492,7 @@ fn openLibraryPath(path: []const u8) !fs.Dir {
             print("path \"{s}\" is not accessible", .{path});
             return error.Explained;
         },
-        else => fatal("unable to open library \"{s}\", err: {s}", .{ path, err }),
+        else => fatal("unable to open library \"{s}\", err: {!}", .{ path, err }),
     };
 }
 
@@ -646,7 +646,7 @@ fn saveTrack(db: *sqlite.Db, artist_id: ArtistID, album_id: AlbumID, metadata: M
             .number = metadata.track_number,
         },
     ) catch {
-        print("unable to insert track \"{s}\" (artist_id={d}, album_id={d}, track number={d}), err: {s}", .{
+        print("unable to insert track \"{?s}\" (artist_id={d}, album_id={d}, track number={d}), err: {s}", .{
             metadata.track_name,
             artist_id,
             album_id,
@@ -828,7 +828,7 @@ pub fn main() anyerror!u8 {
     return 0;
 }
 
-test "" {
+test {
     _ = Query;
 
     std.testing.refAllDecls(@This());
