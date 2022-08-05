@@ -50,7 +50,7 @@ const Op = struct {
         try writer.print("{s}{s}{s}", .{
             @tagName(value.key),
             value.operator,
-            value.value,
+            fmtSliceQuote(value.value),
         });
     }
 };
@@ -186,7 +186,9 @@ test "query parse" {
             },
         },
         .{
-            .query = "artist=~\"   José  \" album!=\"   Vincent   \"         track=204",
+            .query = 
+            \\artist=~"   José  " album!="   Vincent   "         track=204
+            ,
             .exp = &[_]Op{
                 .{
                     .key = .artist,
@@ -234,5 +236,67 @@ test "query parse" {
             try testing.expectEqual(exp.operator, res.ops[i].operator);
             try testing.expectEqualStrings(exp.value, res.ops[i].value);
         }
+    }
+}
+
+//
+fn fmtSliceQuote(slice: []const u8) fmt.Formatter(formatSliceQuote) {
+    return .{ .data = slice };
+}
+
+fn formatSliceQuote(slice: []const u8, comptime _: []const u8, _: fmt.FormatOptions, writer: anytype) !void {
+    const charset = "0123456789abcdef";
+
+    var buf: [4]u8 = undefined;
+
+    for (slice) |c| {
+        if (c == '\\' or c == '"') {
+            buf[0] = '\\';
+            buf[1] = c;
+            try writer.writeAll(buf[0..2]);
+        } else if (std.ascii.isPrint(c) or std.ascii.isAlNum(c) or std.ascii.isPunct(c)) {
+            try writer.writeByte(c);
+        } else {
+            buf[0] = '\\';
+            buf[1] = 'x';
+
+            buf[2] = charset[c >> 4];
+            buf[3] = charset[c & 15];
+
+            try writer.writeAll(&buf);
+        }
+    }
+}
+
+test "fmtQuote" {
+    const testCases = &[_]struct {
+        input: []const u8,
+        exp: []const u8,
+    }{
+        .{
+            .input = "Foobar",
+            .exp = "Foobar",
+        },
+        .{
+            // TODO(vincent): would be better using multiline strings but zig.vim
+            // always reposition the cursor to it and it's super annoying.
+            .input = 
+            \\The Wreck of "S.S." Needle
+            ,
+            .exp = 
+            \\The Wreck of \"S.S.\" Needle
+            ,
+        },
+    };
+
+    inline for (testCases) |tc| {
+        var list = std.ArrayList(u8).init(testing.allocator);
+
+        try list.writer().print("{s}", .{fmtSliceQuote(tc.input)});
+
+        const result = list.toOwnedSlice();
+        defer testing.allocator.free(result);
+
+        try testing.expectEqualStrings(tc.exp, result);
     }
 }
