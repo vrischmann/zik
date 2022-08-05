@@ -462,15 +462,19 @@ fn cmdScan(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !
     }
 }
 
-fn cmdQuery(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !void {
-    _ = allocator;
+fn cmdQuery(root_allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) !void {
     _ = db;
+
+    var arena = heap.ArenaAllocator.init(root_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     if (args.len < 1) {
         print(query_usage, .{});
         return error.Explained;
     }
 
+    var query_string: []const u8 = undefined;
     {
         var i: usize = 0;
         while (i < args.len) : (i += 1) {
@@ -479,8 +483,15 @@ fn cmdQuery(allocator: mem.Allocator, db: *sqlite.Db, args: []const []const u8) 
                 print(query_usage, .{});
                 return error.Explained;
             }
+            query_string = arg;
+            break;
         }
     }
+
+    var diags = Query.ParseDiagnostics{};
+    var query = try Query.parse(allocator, &diags, query_string);
+
+    debug.print("query: {s}\n", .{query.ops});
 }
 
 fn openLibraryPath(path: []const u8) !fs.IterableDir {

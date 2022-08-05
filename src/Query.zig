@@ -1,5 +1,6 @@
 const std = @import("std");
 const debug = std.debug;
+const fmt = std.fmt;
 const mem = std.mem;
 const meta = std.meta;
 const testing = std.testing;
@@ -26,12 +27,32 @@ pub const ComparisonOperator = enum {
     greater_than_or_equal,
     less_than,
     less_than_or_equal,
+
+    pub fn format(value: ComparisonOperator, comptime _: []const u8, _: fmt.FormatOptions, writer: anytype) !void {
+        switch (value) {
+            .equal => try writer.writeAll("="),
+            .not_equal => try writer.writeAll("!="),
+            .contains => try writer.writeAll("=~"),
+            .greater_than => try writer.writeAll(">"),
+            .greater_than_or_equal => try writer.writeAll(">="),
+            .less_than => try writer.writeAll("<"),
+            .less_than_or_equal => try writer.writeAll("<="),
+        }
+    }
 };
 
 const Op = struct {
     key: Key,
     operator: ComparisonOperator,
     value: []const u8,
+
+    pub fn format(value: Op, comptime _: []const u8, _: fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("{s}{s}{s}", .{
+            @tagName(value.key),
+            value.operator,
+            value.value,
+        });
+    }
 };
 
 allocator: mem.Allocator,
