@@ -10,7 +10,7 @@ fn addDeps(step: *std.build.LibExeObjStep) void {
 
 pub fn build(b: *std.build.Builder) !void {
     var target = b.standardTargetOptions(.{});
-    const target_info = try std.zig.system.NativeTargetInfo.detect(b.allocator, target);
+    const target_info = try std.zig.system.NativeTargetInfo.detect(target);
     if (target_info.target.os.tag == .linux and target_info.target.abi == .gnu) {
         target.setGnuLibCVersion(2, 28, 0);
     }
