@@ -320,8 +320,6 @@ const ExtractMetadataError = error{
     MyMetadata.FromAudioMetaError;
 
 fn extractMetadata(allocator: mem.Allocator, db: *sqlite.Db, entry: fs.IterableDir.Walker.WalkerEntry, options: ExtractMetadataOptions) ExtractMetadataError!void {
-    _ = db;
-
     print("file {s}", .{entry.path});
 
     var metadata = blk: {
